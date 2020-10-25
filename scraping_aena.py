@@ -10,14 +10,49 @@ def get_logger():
     logging.basicConfig(level=logging.INFO,
                         format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
                         datefmt='%d-%b-%y %H:%M:%S')
-    logger = logging.getLogger('scraping_aena')
-    return logger
+    return logging.getLogger('scraping_aena')
+
+
+def get_parametros_respuesta(texto_filtro):
+    """Convierte el texto con el filtro de la consulta en un
+    diccionario de parámetros de la respuesta"""
+
+    d = dict(item.split(":") for item in texto_filtro.split(","))
+    parametros_respuesta = dict(zip(list(k.strip() for k in d.keys()),
+                                    (list(v.strip() for v in d.values()))))
+
+    return parametros_respuesta
+
+
+def comprobacion_resultados(filas_resultados, numero_resultados, parametros_respuesta, movimiento, aeropuerto):
+    """Comprobación de resultados. Número de resultados y parámetros."""
+    if len(filas_resultados) - 1 != numero_resultados:
+        logger.warning("El número de resultados de la búsqueda ({}) no es igual al numero de filas recuperadas ({})".
+                       format(numero_resultados, len(filas_resultados) - 1))
+
+    if (parametros_respuesta['Movimiento'] != movimiento or
+            parametros_respuesta['Aeropuerto Base'] != aeropuerto):
+        logger.warning("Los parámetros de la búsqueda y de la respuesta no coinciden:")
+        logger.warning("    - Movimiento: {} - {}".format(movimiento, parametros_respuesta['Movimiento']))
+        logger.warning("    - Aeropuerto {} - {}".format(aeropuerto, parametros_respuesta['Aeropuerto Base']))
+
+
+def recuperar_datos_busqueda(filas_resultados):
+    df = pd.DataFrame([], columns=["airline", "total", "1", "2", "3", "4", "5", "6", "7", "8", "9"])
+
+    for fila in filas_resultados[:-1]:
+        valores = []
+        casillas = fila.find_elements_by_tag_name("td")
+        for c in casillas:
+            valor = c.get_attribute('textContent')
+            if valor != '':
+                valores.append(valor)
+
+        df.loc[len(df)] = valores
+    return df
 
 
 def main():
-
-    logger = get_logger()
-
     driver = webdriver.Firefox()
     wait = WebDriverWait(driver, timeout=30)
 
@@ -62,41 +97,18 @@ def main():
     numero_resultados = int(casilla_numero_resultados.text.split()[0])
     logger.info("Fin de la búsqueda. {} resultados encontrados.".format(numero_resultados))
 
-    # Recuperamos los resultados en un dataframe de pandas
-    # TODO pasar esto a una función
+    # Recuperamos las filas de la tabla de resultados
+    # Las filas de la tabla de respuesta tienen como id campo de agrupación,
+    # para nuestro caso todos los ids empiezan con 'NOMBRE COMPAÑIA:"
 
-    # Las filas de la tabla de respuesta tienen como id campo de agrupación.
-    # Para nuestro caso todos los ids empiezan con 'NOMBRE COMPAÑIA:"
-    # La tabla de resultados incluye una fila para el total.
     filas_resultados = driver.find_elements_by_xpath("//tr[starts-with(@id,'NOMBRE COMPAÑIA:')]")
 
-    # Comprobación de resultados. Número de resultados y parámetros.
-    if len(filas_resultados)-1 != numero_resultados:
-        logger.warning("El número de resultados de la búsqueda ({}) no es igual al numero de filas recuperadas ({})".
-                       format(numero_resultados, len(filas_resultados-1)))
-
     texto_filtro = driver.find_element_by_xpath("//td[starts-with(text(),'CONSULTA:')]").text
-    d = dict(item.split(":") for item in texto_filtro.split(","))
-    parametros_respuesta = dict(zip(list(k.strip() for k in d.keys()),
-                                   (list(v.strip() for v in d.values()))))
+    parametros_respuesta = get_parametros_respuesta(texto_filtro)
 
-    if (parametros_respuesta['Movimiento']!=movimiento or
-        parametros_respuesta['Aeropuerto Base']!=aeropuerto):
-        logger.warning("Los parámetros de búsqueda y de la respuesta no coinciden")
-        logger.warning("    - Movimiento: {} - {}".format(movimiento, parametros_respuesta['Movimiento']))
-        logger.warning("    - Aeropuerto {} - {}".format(aeropuerto, parametros_respuesta['Aeropuerto Base']))
+    comprobacion_resultados(filas_resultados, numero_resultados, parametros_respuesta, movimiento, aeropuerto)
 
-    df = pd.DataFrame([], columns=["airline", "total", "1", "2", "3", "4", "5", "6", "7", "8", "9"])
-
-    for fila in filas_resultados[:-1]:
-        valores = []
-        casillas = fila.find_elements_by_tag_name("td")
-        for c in casillas:
-            valor = c.get_attribute('textContent')
-            if valor != '':
-                valores.append(valor)
-
-        df.loc[len(df)] = valores
+    df = recuperar_datos_busqueda(filas_resultados)
 
     # TODO Conversión de datos en el dataframe
     # TODO convertir la tabla en una tabla larga
@@ -111,4 +123,5 @@ def main():
 
 
 if __name__ == '__main__':
+    logger = get_logger()
     main()
