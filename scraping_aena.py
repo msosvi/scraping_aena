@@ -101,6 +101,9 @@ def main():
     for aeropuerto in aeropuertos:
         for movimiento in movimientos:
 
+            logger.info("Sleeping...")
+            time.sleep(5)
+
             # Tenemos que volver a coger los campos select ya que la página se actualiza después de cada búsqueda.
             select_aeropuerto = Select(
                 driver.find_element_by_xpath("//select[@id='selectElementos'][@title='Aeropuerto Base']"))
@@ -113,10 +116,11 @@ def main():
             logger.info("Inicio de la búsqueda de datos para: {} - {}".format(aeropuerto, movimiento))
             driver.execute_script('buscar()')
 
-            # Usamos el texto con el resultado de la búsqueda como indicador de que ha terminado.
-            casilla_numero_resultados = wait.until(
-                EC.visibility_of_element_located((By.XPATH, "//td[contains(text(),'resultados encontrados')]")))
+            # Usamos la fila de totales del resultado como indicador de que la carga de la búsqueda ha terminado.
+            fila_total = wait.until(
+                EC.visibility_of_element_located((By.XPATH, "//tr[starts-with(@id,'NOMBRE COMPAÑIA:Total')]")))
 
+            casilla_numero_resultados=driver.find_element_by_xpath("//td[contains(text(),'resultados encontrados')]")
             numero_resultados = int(casilla_numero_resultados.text.split()[0])
             logger.info("Fin de la búsqueda. {} resultados encontrados.".format(numero_resultados))
 
@@ -134,8 +138,8 @@ def main():
             logger.info("Inicio de la recuperación de los datos de la búsqueda")
             df_busqueda = recuperar_datos_busqueda(filas_resultados)
 
-            # Añadimos columnas al dataframe para los páramtros usados en la consulta: el aeropuerto y el tipo de
-            # movimiento.
+            # Añadimos columnas al dataframe para los parámetros usados en la consulta:
+            # el aeropuerto y el tipo de movimiento.
             df_busqueda['movimiento'] = parametros_respuesta['Movimiento']
             df_busqueda['aeropuerto'] = parametros_respuesta['Aeropuerto Base']
 
@@ -147,15 +151,15 @@ def main():
             df = pd.concat([df,df_busqueda], axis=0)
             logger.info("Número total de registros recuperados {}".format(len(df)))
 
-            # Como usamos el texto de 'resultados encontrados' para idenficar que la busqueda ha terminado
-            # lo quitamos antes de hacer la siguiente búsqueda
-            driver.execute_script("arguments[0].innerText = 'Esperando resultados'", casilla_numero_resultados)
+            # Como usamos el id de la fila de totales para idenficar que la búsqueda ha terminado
+            # lo cambiamos antes de hacer la siguiente búsqueda
+            driver.execute_script("arguments[0].id = 'fila_total'", fila_total)
 
-            logger.info("Sleeping...")
-            time.sleep(30)
-
+    logger.info("Exportación del conjunto de datos.")
     df.to_csv("pasajeros_prueba.csv")
     df.to_pickle("pasajeros_prueba.pkl")
+
+    logger.info("Fin.")
     driver.quit()
 
 
