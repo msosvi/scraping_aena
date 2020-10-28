@@ -4,6 +4,7 @@ from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 import pandas as pd
+import time
 
 
 def get_logger():
@@ -52,6 +53,16 @@ def recuperar_datos_busqueda(filas_resultados):
     return df
 
 
+def get_text_options(select):
+
+    text_options = []
+    for option in select.options:
+        text_options.append(option.text)
+
+    # No devuelvo la primera optición que se corresponde con 'todos'
+    return text_options[1:]
+
+
 def main():
     driver = webdriver.Firefox()
     wait = WebDriverWait(driver, timeout=30)
@@ -80,45 +91,71 @@ def main():
     select_tipo_consulta.select_by_visible_text("1. Pasajeros")
     select_agrupacion.select_by_visible_text("NOMBRE COMPAÑIA")
 
-    # TODO A partir de aquí tenemos que poner el bucle para recuperar los datos de todos los aeropuertos.
-    aeropuerto = "LA PALMA"
-    movimiento = "LLEGADA"
+    aeropuertos = get_text_options(select_aeropuerto)
+    movimientos = get_text_options(select_movimiento)
 
-    select_aeropuerto.select_by_visible_text(aeropuerto)
-    select_movimiento.select_by_visible_text(movimiento)
+    # TODO Quitar limitación a 3 aeropuertos
+    aeropuertos = aeropuertos[:2]
 
-    logger.info("Inicio de la búsqueda de datos para: {} - {}".format(aeropuerto, movimiento))
-    driver.execute_script('buscar()')
+    df = None
+    for aeropuerto in aeropuertos:
+        for movimiento in movimientos:
 
-    # Usamos el texto con el resultado de la búsqueda como indicador de que ha terminado.
-    casilla_numero_resultados = wait.until(
-        EC.visibility_of_element_located((By.XPATH, "//td[contains(text(),'resultados encontrados')]")))
+            # Tenemos que volver a coger los campos select ya que la página se actualiza después de cada búsqueda.
+            select_aeropuerto = Select(
+                driver.find_element_by_xpath("//select[@id='selectElementos'][@title='Aeropuerto Base']"))
+            select_movimiento = Select(
+                driver.find_element_by_xpath("//select[@id='selectElementos'][@title='Movimiento']"))
 
-    numero_resultados = int(casilla_numero_resultados.text.split()[0])
-    logger.info("Fin de la búsqueda. {} resultados encontrados.".format(numero_resultados))
+            select_aeropuerto.select_by_visible_text(aeropuerto)
+            select_movimiento.select_by_visible_text(movimiento)
 
-    # Recuperamos las filas de la tabla de resultados
-    # Las filas de la tabla de respuesta tienen como id campo de agrupación,
-    # para nuestro caso todos los ids empiezan con 'NOMBRE COMPAÑIA:"
+            logger.info("Inicio de la búsqueda de datos para: {} - {}".format(aeropuerto, movimiento))
+            driver.execute_script('buscar()')
 
-    filas_resultados = driver.find_elements_by_xpath("//tr[starts-with(@id,'NOMBRE COMPAÑIA:')]")
+            # Usamos el texto con el resultado de la búsqueda como indicador de que ha terminado.
+            casilla_numero_resultados = wait.until(
+                EC.visibility_of_element_located((By.XPATH, "//td[contains(text(),'resultados encontrados')]")))
 
-    texto_filtro = driver.find_element_by_xpath("//td[starts-with(text(),'CONSULTA:')]").text
-    parametros_respuesta = get_parametros_respuesta(texto_filtro)
+            numero_resultados = int(casilla_numero_resultados.text.split()[0])
+            logger.info("Fin de la búsqueda. {} resultados encontrados.".format(numero_resultados))
 
-    comprobacion_resultados(filas_resultados, numero_resultados, parametros_respuesta, movimiento, aeropuerto)
+            # Recuperamos las filas de la tabla de resultados
+            # Las filas de la tabla de respuesta tienen como id campo de agrupación,
+            # para nuestro caso todos los ids empiezan con 'NOMBRE COMPAÑIA:"
 
-    df = recuperar_datos_busqueda(filas_resultados)
+            filas_resultados = driver.find_elements_by_xpath("//tr[starts-with(@id,'NOMBRE COMPAÑIA:')]")
 
-    # TODO Conversión de datos en el dataframe
-    # TODO convertir la tabla en una tabla larga
+            texto_filtro = driver.find_element_by_xpath("//td[starts-with(text(),'CONSULTA:')]").text
+            parametros_respuesta = get_parametros_respuesta(texto_filtro)
 
-    # Añadimos columnas al dataframe para los páramtros usados en la consulta: el aeropuerto y el tipo de movimiento.
-    df['movimiento'] = parametros_respuesta['Movimiento']
-    df['aeropuerto'] = parametros_respuesta['Aeropuerto Base']
+            comprobacion_resultados(filas_resultados, numero_resultados, parametros_respuesta, movimiento, aeropuerto)
+
+            logger.info("Inicio de la recuperación de los datos de la búsqueda")
+            df_busqueda = recuperar_datos_busqueda(filas_resultados)
+
+            # Añadimos columnas al dataframe para los páramtros usados en la consulta: el aeropuerto y el tipo de
+            # movimiento.
+            df_busqueda['movimiento'] = parametros_respuesta['Movimiento']
+            df_busqueda['aeropuerto'] = parametros_respuesta['Aeropuerto Base']
+
+            logger.info("Fin de la recuperación de los datos de la búsqueda")
+
+            # TODO Conversión de datos en el dataframe
+            # TODO convertir la tabla en una tabla larga
+
+            df = pd.concat([df,df_busqueda], axis=0)
+            logger.info("Número total de registros recuperados {}".format(len(df)))
+
+            # Como usamos el texto de 'resultados encontrados' para idenficar que la busqueda ha terminado
+            # lo quitamos antes de hacer la siguiente búsqueda
+            driver.execute_script("arguments[0].innerText = 'Esperando resultados'", casilla_numero_resultados)
+
+            logger.info("Sleeping...")
+            time.sleep(30)
 
     df.to_csv("pasajeros_prueba.csv")
-
+    df.to_pickle("pasajeros_prueba.pkl")
     driver.quit()
 
 
