@@ -7,10 +7,13 @@ import pandas as pd
 import time
 
 
+# noinspection PyArgumentList
 def get_logger():
     logging.basicConfig(level=logging.INFO,
                         format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
-                        datefmt='%d-%b-%y %H:%M:%S')
+                        datefmt='%d-%b-%y %H:%M:%S',
+                        handlers=[logging.FileHandler("scraping_aena.log"), logging.StreamHandler()]
+                        )
     return logging.getLogger('scraping_aena')
 
 
@@ -54,7 +57,6 @@ def recuperar_datos_busqueda(filas_resultados):
 
 
 def get_text_options(select):
-
     text_options = []
     for option in select.options:
         text_options.append(option.text)
@@ -100,7 +102,6 @@ def main():
     df = None
     for aeropuerto in aeropuertos:
         for movimiento in movimientos:
-
             logger.info("Sleeping...")
             time.sleep(5)
 
@@ -120,7 +121,7 @@ def main():
             fila_total = wait.until(
                 EC.visibility_of_element_located((By.XPATH, "//tr[starts-with(@id,'NOMBRE COMPAÑIA:Total')]")))
 
-            casilla_numero_resultados=driver.find_element_by_xpath("//td[contains(text(),'resultados encontrados')]")
+            casilla_numero_resultados = driver.find_element_by_xpath("//td[contains(text(),'resultados encontrados')]")
             numero_resultados = int(casilla_numero_resultados.text.split()[0])
             logger.info("Fin de la búsqueda. {} resultados encontrados.".format(numero_resultados))
 
@@ -148,7 +149,7 @@ def main():
             # TODO Conversión de datos en el dataframe
             # TODO convertir la tabla en una tabla larga
 
-            df = pd.concat([df,df_busqueda], axis=0)
+            df = pd.concat([df, df_busqueda], axis=0)
             logger.info("Número total de registros recuperados {}".format(len(df)))
 
             # Como usamos el id de la fila de totales para idenficar que la búsqueda ha terminado
