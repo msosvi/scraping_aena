@@ -3,8 +3,12 @@ from selenium import webdriver
 from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
+import numpy as np
 import pandas as pd
 import time
+
+COLUMNAS_NUMERICAS = ['total', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+ENCABEZADO_COMPLETO = ['airline'] + COLUMNAS_NUMERICAS
 
 
 # noinspection PyArgumentList
@@ -41,8 +45,11 @@ def comprobacion_resultados(filas_resultados, numero_resultados, parametros_resp
         logger.warning("    - Aeropuerto {} - {}".format(aeropuerto, parametros_respuesta['Aeropuerto Base']))
 
 
-def recuperar_datos_busqueda(filas_resultados):
-    df = pd.DataFrame([], columns=["airline", "total", "1", "2", "3", "4", "5", "6", "7", "8", "9"])
+def recuperar_datos_busqueda(fila_encabezado, filas_resultados):
+    encabezado_busqueda = fila_encabezado.text.lower().split(" ")
+    encabezado_busqueda.insert(0, "airline")
+
+    df = pd.DataFrame([], columns=encabezado_busqueda)
 
     for fila in filas_resultados[:-1]:
         valores = []
@@ -53,6 +60,14 @@ def recuperar_datos_busqueda(filas_resultados):
                 valores.append(valor)
 
         df.loc[len(df)] = valores
+
+    df = df.reindex(columns=ENCABEZADO_COMPLETO, fill_value='--')
+    return df
+
+
+def aplicar_tipo_numerico(df, columnas_numericas):
+    df[columnas_numericas] = df[columnas_numericas].apply(
+        lambda x: x.str.replace(r'\.', '').replace('--', np.NaN).astype(float).astype('Int64'))
     return df
 
 
@@ -96,8 +111,10 @@ def main():
     aeropuertos = get_text_options(select_aeropuerto)
     movimientos = get_text_options(select_movimiento)
 
-    # TODO Quitar limitación a 3 aeropuertos
-    aeropuertos = aeropuertos[:2]
+    # TODO Quitar limitación de parametros para las pruebas
+    # aeropuertos = aeropuertos[:2]
+    aeropuertos = ['ADOLFO SUÁREZ MADRID-BARAJAS', 'MADRID-TORREJON', 'LA PALMA']
+    movimientos = ['LLEGADA']
 
     df = None
     for aeropuerto in aeropuertos:
@@ -111,54 +128,65 @@ def main():
             select_movimiento = Select(
                 driver.find_element_by_xpath("//select[@id='selectElementos'][@title='Movimiento']"))
 
+            logger.info("Inicio de la búsqueda de datos para: {} - {}".format(aeropuerto, movimiento))
+
             select_aeropuerto.select_by_visible_text(aeropuerto)
             select_movimiento.select_by_visible_text(movimiento)
 
-            logger.info("Inicio de la búsqueda de datos para: {} - {}".format(aeropuerto, movimiento))
             driver.execute_script('buscar()')
 
-            # Usamos la fila de totales del resultado como indicador de que la carga de la búsqueda ha terminado.
-            fila_total = wait.until(
-                EC.visibility_of_element_located((By.XPATH, "//tr[starts-with(@id,'NOMBRE COMPAÑIA:Total')]")))
+            # Usamos el texto con el resultado de la búsqueda como indicador de que ha terminado.
+            casilla_numero_resultados = wait.until(
+                EC.visibility_of_element_located((By.XPATH, "//td[contains(text(),'resultados encontrados')]")))
 
-            casilla_numero_resultados = driver.find_element_by_xpath("//td[contains(text(),'resultados encontrados')]")
             numero_resultados = int(casilla_numero_resultados.text.split()[0])
             logger.info("Fin de la búsqueda. {} resultados encontrados.".format(numero_resultados))
 
-            # Recuperamos las filas de la tabla de resultados
-            # Las filas de la tabla de respuesta tienen como id campo de agrupación,
-            # para nuestro caso todos los ids empiezan con 'NOMBRE COMPAÑIA:"
+            if numero_resultados > 0:
+                # Esperamos a que la carga de resultados termine para recuperar todas las filas.
+                # Usamos la fila de totales como indicador.
+                fila_total = wait.until(
+                    EC.visibility_of_element_located((By.XPATH, "//tr[starts-with(@id,'NOMBRE COMPAÑIA:Total')]")))
 
-            filas_resultados = driver.find_elements_by_xpath("//tr[starts-with(@id,'NOMBRE COMPAÑIA:')]")
+                # Recuperamos la fila de encabezado
+                # La necesitamos porque si un mes no tiene datos la tabla de resultado incluye la columna.
+                # Usamos la fila anterior que tiene el texto Pasajeros para localizarla.
+                fila_encabezado = driver.find_element_by_xpath("//tr/td[text()='Pasajeros']/../following-sibling::tr")
 
-            texto_filtro = driver.find_element_by_xpath("//td[starts-with(text(),'CONSULTA:')]").text
-            parametros_respuesta = get_parametros_respuesta(texto_filtro)
+                # Recuperamos las filas de la tabla de resultados
+                # Las filas de la tabla de respuesta tienen como id campo de agrupación,
+                # para nuestro caso todos los ids empiezan con 'NOMBRE COMPAÑIA:"
 
-            comprobacion_resultados(filas_resultados, numero_resultados, parametros_respuesta, movimiento, aeropuerto)
+                filas_resultados = driver.find_elements_by_xpath("//tr[starts-with(@id,'NOMBRE COMPAÑIA:')]")
 
-            logger.info("Inicio de la recuperación de los datos de la búsqueda")
-            df_busqueda = recuperar_datos_busqueda(filas_resultados)
+                texto_filtro = driver.find_element_by_xpath("//td[starts-with(text(),'CONSULTA:')]").text
+                parametros_respuesta = get_parametros_respuesta(texto_filtro)
 
-            # Añadimos columnas al dataframe para los parámetros usados en la consulta:
-            # el aeropuerto y el tipo de movimiento.
-            df_busqueda['movimiento'] = parametros_respuesta['Movimiento']
-            df_busqueda['aeropuerto'] = parametros_respuesta['Aeropuerto Base']
+                comprobacion_resultados(filas_resultados, numero_resultados, parametros_respuesta,
+                                        movimiento, aeropuerto)
 
-            logger.info("Fin de la recuperación de los datos de la búsqueda")
+                logger.info("Inicio de la recuperación de los resultados de la búsqueda.")
+                df_busqueda = recuperar_datos_busqueda(fila_encabezado, filas_resultados)
 
-            # TODO Conversión de datos en el dataframe
-            # TODO convertir la tabla en una tabla larga
+                # Añadimos columnas al dataframe para los parámetros usados en la consulta:
+                # el aeropuerto y el tipo de movimiento.
+                df_busqueda['movimiento'] = parametros_respuesta['Movimiento']
+                df_busqueda['aeropuerto'] = parametros_respuesta['Aeropuerto Base']
 
-            df = pd.concat([df, df_busqueda], axis=0)
-            logger.info("Número total de registros recuperados {}".format(len(df)))
+                logger.info("Fin de la recuperación de los datos de la búsqueda")
 
-            # Como usamos el id de la fila de totales para idenficar que la búsqueda ha terminado
-            # lo cambiamos antes de hacer la siguiente búsqueda
-            driver.execute_script("arguments[0].id = 'fila_total'", fila_total)
+                df_busqueda = aplicar_tipo_numerico(df_busqueda, COLUMNAS_NUMERICAS)
+
+                df = pd.concat([df, df_busqueda], axis=0)
+                logger.info("Número total de registros recuperados {}".format(len(df)))
+
+            # Como usamos el texto de 'resultados encontrados' para idenficar que la búsqueda ha terminado
+            # lo quitamos antes de hacer la siguiente búsqueda.
+            driver.execute_script("arguments[0].innerText = 'Iniciando nueva busqueda...'", casilla_numero_resultados)
 
     logger.info("Exportación del conjunto de datos.")
     df.to_csv("pasajeros_prueba.csv")
-    df.to_pickle("pasajeros_prueba.pkl")
+    df.to_pickle("pasajeros_prueba_numeros.pkl")
 
     logger.info("Fin.")
     driver.quit()
