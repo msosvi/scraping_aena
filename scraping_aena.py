@@ -6,6 +6,7 @@ from selenium.webdriver.common.by import By
 import numpy as np
 import pandas as pd
 import time
+import datetime
 
 COLUMNAS_NUMERICAS = ['total', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
 ENCABEZADO_COMPLETO = ['airline'] + COLUMNAS_NUMERICAS
@@ -21,28 +22,35 @@ def get_logger():
     return logging.getLogger('scraping_aena')
 
 
-def get_parametros_respuesta(texto_filtro):
-    """Convierte el texto con el filtro de la consulta en un
-    diccionario de parámetros de la respuesta"""
+def comprobacion_parametros_respuesta(parametros_respuesta, movimiento, aeropuerto, year):
+    if parametros_respuesta['Movimiento'] != movimiento:
+        logger.warning("El parametro 'Movimiento' no coincide en la búsqueda y la respuesta:")
+        logger.warning("  - Búsqueda: {} - Respuesta: {}".format(movimiento, parametros_respuesta['Movimiento']))
 
-    d = dict(item.split(":") for item in texto_filtro.split(","))
-    parametros_respuesta = dict(zip(list(k.strip() for k in d.keys()),
-                                    (list(v.strip() for v in d.values()))))
+    if parametros_respuesta['Aeropuerto Base'] != aeropuerto:
+        logger.warning("El parametro 'Aeropuerto Base' no coincide en la búsqueda y la respuesta:")
+        logger.warning("  - Búsqueda: {} - Respuesta: {}".format(aeropuerto, parametros_respuesta['Aeropuerto Base']))
 
-    return parametros_respuesta
+    if year == datetime.datetime.now().year:
+        if parametros_respuesta['CONSULTA'] != 'Datos Provisionales Año en Curso':
+            logger.warning("La consulta no ha devuelto datos para el año {} ({}).".
+                           format(year, parametros_respuesta['CONSULTA']))
+    else:
+        if parametros_respuesta['CONSULTA'] != "{} - Datos Definitivos".format(year):
+            logger.warning("La consulta no ha devuelto los datos para el año {} ({}).".
+                           format(year, parametros_respuesta['CONSULTA']))
 
 
-def comprobacion_resultados(filas_resultados, numero_resultados, parametros_respuesta, movimiento, aeropuerto):
-    """Comprobación de resultados. Número de resultados y parámetros."""
+def comprobacion_numero_filas_resultado(filas_resultados, numero_resultados):
     if len(filas_resultados) - 1 != numero_resultados:
-        logger.warning("El número de resultados de la búsqueda ({}) no es igual al numero de filas recuperadas ({})".
+        logger.warning("El número de resultados de la búsqueda ({}) no es igual al número de filas recuperadas ({})".
                        format(numero_resultados, len(filas_resultados) - 1))
 
-    if (parametros_respuesta['Movimiento'] != movimiento or
-            parametros_respuesta['Aeropuerto Base'] != aeropuerto):
-        logger.warning("Los parámetros de la búsqueda y de la respuesta no coinciden:")
-        logger.warning("    - Movimiento: {} - {}".format(movimiento, parametros_respuesta['Movimiento']))
-        logger.warning("    - Aeropuerto {} - {}".format(aeropuerto, parametros_respuesta['Aeropuerto Base']))
+
+def comprobacion_numero_registros_df(df, numero_resultados):
+    if len(df) != numero_resultados:
+        logger.warning("El número de resultados de la búsqueda ({}) no es igual al número de registro recuperados ({})".
+                       format(numero_resultados, len(df)))
 
 
 def recuperar_datos_busqueda(fila_encabezado, filas_resultados):
@@ -80,31 +88,98 @@ def get_text_options(select):
     return text_options[1:]
 
 
-def main():
-    driver = webdriver.Firefox()
-    wait = WebDriverWait(driver, timeout=30)
+def get_select_tipo_consulta(driver):
+    return Select(driver.find_element_by_id('dssid'))
+
+
+def get_select_agrupacion(driver):
+    return Select(driver.find_element_by_xpath("//select[@id='selectObjetos'][@title='Agrupación']"))
+
+
+def get_select_aeropuerto(driver):
+    return Select(driver.find_element_by_xpath("//select[@id='selectElementos'][@title='Aeropuerto Base']"))
+
+
+def get_select_movimiento(driver):
+    return Select(driver.find_element_by_xpath("//select[@id='selectElementos'][@title='Movimiento']"))
+
+
+def get_select_year(driver):
+    return Select(driver.find_element_by_xpath("//select[@id='selectElementos'][@title='Año']"))
+
+
+def get_fila_encabezado(driver):
+    """Recuperamos la fila de encabezado.
+    La necesitamos porque si un mes no tiene datos la tabla de resultado no incluye la columna.
+    Usamos la fila anterior que tiene el texto Pasajeros para localizarla."""
+
+    return driver.find_element_by_xpath("//tr/td[text()='Pasajeros']/../following-sibling::tr")
+
+
+def get_filas_resultados(driver):
+    """Recuperamos las filas de la tabla de resultados
+    # Las filas de la tabla de respuesta tienen como id campo de agrupación,
+    # para nuestro caso todos los ids empiezan con 'NOMBRE COMPAÑIA:"""
+
+    return driver.find_elements_by_xpath("//tr[starts-with(@id,'NOMBRE COMPAÑIA:')]")
+
+
+def get_parametros_respuesta(driver):
+    """Devuelve un diccionario con los parámetros usados en la consulta a partir del texto
+    con el filtro de la consulta que devuelve la página."""
+
+    texto_filtro = driver.find_element_by_xpath("//td[starts-with(text(),'CONSULTA:')]").text
+
+    # La descripción de la consulta para los años anteriores incluye el texto 'Año:', los dos puntos
+    # impide el correcto troceado.
+    texto_filtro = str.replace(texto_filtro, "Año:", "")
+
+    d = dict(item.split(":") for item in texto_filtro.split(","))
+    parametros_respuesta = dict(zip(list(k.strip() for k in d.keys()),
+                                    (list(v.strip() for v in d.values()))))
+
+    return parametros_respuesta
+
+
+def abrir_pagina_estadistica(driver, wait, tipo):
 
     driver.get("https://wwwssl.aena.es/csee/Satellite?pagename=Estadisticas/Home")
-    logger.info("Fin de la carga de la página inicial.")
+    logger.info("Página incial de Estadísticas de tráfico aéreo de AENA cargada.")
 
-    select_estado_actual = Select(driver.find_element_by_id('estadoactual'))
-    select_estado_actual.select_by_visible_text("1. Pasajeros")
+    if tipo == 'AÑO_ACTUAL':
+        select_id = 'estadoactual'
+        open_script = 'abrirEnlaceComboestadoactual()'
+        logger.info("Incio de la carga de la página de estadísticas del año en curso por pasajeros.")
+    else:
+        select_id = 'traficoanio'
+        open_script = 'abrirEnlaceCombotraficoanio()'
+        logger.info("Incio de la carga de la página de estadísticas de los años anteriores por pasajeros.")
 
-    logger.info("Incio de la carga de la página de estadísticas del año en curso por pasajeros")
-    driver.execute_script('abrirEnlaceComboestadoactual()')
+    select_estadistica = Select(driver.find_element_by_id(select_id))
+    select_estadistica.select_by_visible_text("1. Pasajeros")
+    driver.execute_script(open_script)
     # Usamos el botón de búsqueda como indicador de que la página está cargada.
     wait.until(EC.element_to_be_clickable((By.XPATH, "//a[@href ='javascript:buscar();']")))
-    logger.info("Fin de la carga de la página de estadísticas del año en curso por pasajeros")
+    logger.info("Fin de la carga de la página de estadísticas.")
+
+
+def scraping_year(driver, wait, year):
+
+    if year == datetime.datetime.now().year:
+        abrir_pagina_estadistica(driver, wait, 'AÑO_ACTUAL')
+    else:
+        abrir_pagina_estadistica(driver, wait, 'AÑOS_ANTERIORES')
+        # En la busqueda de años anteriores hay que especificar el año.
+        select_year = get_select_year(driver)
+        select_year.select_by_visible_text(str(year))
 
     # Recuperamos los select de los campos que vamos a usar para las búsquedas de datos.
-    select_tipo_consulta = Select(driver.find_element_by_id('dssid'))
-    select_agrupacion = Select(driver.find_element_by_xpath("//select[@id='selectObjetos'][@title='Agrupación']"))
+    select_tipo_consulta = get_select_tipo_consulta(driver)
+    select_agrupacion = get_select_agrupacion(driver)
+    select_aeropuerto = get_select_aeropuerto(driver)
+    select_movimiento = get_select_movimiento(driver)
 
-    select_aeropuerto = Select(
-        driver.find_element_by_xpath("//select[@id='selectElementos'][@title='Aeropuerto Base']"))
-    select_movimiento = Select(driver.find_element_by_xpath("//select[@id='selectElementos'][@title='Movimiento']"))
-
-    # Parámetros de para la búsqueda de datos
+    # Parámetros para la búsqueda de datos
     select_tipo_consulta.select_by_visible_text("1. Pasajeros")
     select_agrupacion.select_by_visible_text("NOMBRE COMPAÑIA")
 
@@ -113,7 +188,7 @@ def main():
 
     # TODO Quitar limitación de parametros para las pruebas
     # aeropuertos = aeropuertos[:2]
-    aeropuertos = ['ADOLFO SUÁREZ MADRID-BARAJAS', 'MADRID-TORREJON', 'LA PALMA']
+    aeropuertos = ['LA PALMA', 'EL HIERRO']
     movimientos = ['LLEGADA']
 
     df = None
@@ -123,12 +198,10 @@ def main():
             time.sleep(5)
 
             # Tenemos que volver a coger los campos select ya que la página se actualiza después de cada búsqueda.
-            select_aeropuerto = Select(
-                driver.find_element_by_xpath("//select[@id='selectElementos'][@title='Aeropuerto Base']"))
-            select_movimiento = Select(
-                driver.find_element_by_xpath("//select[@id='selectElementos'][@title='Movimiento']"))
+            select_aeropuerto = get_select_aeropuerto(driver)
+            select_movimiento = get_select_movimiento(driver)
 
-            logger.info("Inicio de la búsqueda de datos para: {} - {}".format(aeropuerto, movimiento))
+            logger.info("Inicio de la búsqueda de datos para: {} - {}.".format(aeropuerto, movimiento))
 
             select_aeropuerto.select_by_visible_text(aeropuerto)
             select_movimiento.select_by_visible_text(movimiento)
@@ -148,45 +221,51 @@ def main():
                 fila_total = wait.until(
                     EC.visibility_of_element_located((By.XPATH, "//tr[starts-with(@id,'NOMBRE COMPAÑIA:Total')]")))
 
-                # Recuperamos la fila de encabezado
-                # La necesitamos porque si un mes no tiene datos la tabla de resultado incluye la columna.
-                # Usamos la fila anterior que tiene el texto Pasajeros para localizarla.
-                fila_encabezado = driver.find_element_by_xpath("//tr/td[text()='Pasajeros']/../following-sibling::tr")
+                fila_encabezado = get_fila_encabezado(driver)
 
-                # Recuperamos las filas de la tabla de resultados
-                # Las filas de la tabla de respuesta tienen como id campo de agrupación,
-                # para nuestro caso todos los ids empiezan con 'NOMBRE COMPAÑIA:"
+                filas_resultados = get_filas_resultados(driver)
+                comprobacion_numero_filas_resultado(filas_resultados, numero_resultados)
 
-                filas_resultados = driver.find_elements_by_xpath("//tr[starts-with(@id,'NOMBRE COMPAÑIA:')]")
-
-                texto_filtro = driver.find_element_by_xpath("//td[starts-with(text(),'CONSULTA:')]").text
-                parametros_respuesta = get_parametros_respuesta(texto_filtro)
-
-                comprobacion_resultados(filas_resultados, numero_resultados, parametros_respuesta,
-                                        movimiento, aeropuerto)
+                parametros_respuesta = get_parametros_respuesta(driver)
+                comprobacion_parametros_respuesta(parametros_respuesta, movimiento, aeropuerto, year)
 
                 logger.info("Inicio de la recuperación de los resultados de la búsqueda.")
                 df_busqueda = recuperar_datos_busqueda(fila_encabezado, filas_resultados)
+                # TODO comprobacion_totales(df, fila_total)
 
                 # Añadimos columnas al dataframe para los parámetros usados en la consulta:
                 # el aeropuerto y el tipo de movimiento.
                 df_busqueda['movimiento'] = parametros_respuesta['Movimiento']
                 df_busqueda['aeropuerto'] = parametros_respuesta['Aeropuerto Base']
+                df_busqueda['year'] = year
 
                 logger.info("Fin de la recuperación de los datos de la búsqueda")
 
                 df_busqueda = aplicar_tipo_numerico(df_busqueda, COLUMNAS_NUMERICAS)
 
                 df = pd.concat([df, df_busqueda], axis=0)
-                logger.info("Número total de registros recuperados {}".format(len(df)))
+                logger.info("Número total de registros recuperados {}.".format(len(df)))
 
             # Como usamos el texto de 'resultados encontrados' para idenficar que la búsqueda ha terminado
             # lo quitamos antes de hacer la siguiente búsqueda.
             driver.execute_script("arguments[0].innerText = 'Iniciando nueva busqueda...'", casilla_numero_resultados)
 
+    return df
+
+
+def main():
+    driver = webdriver.Firefox()
+    wait = WebDriverWait(driver, timeout=30)
+
+    df = None
+    for year in range(2019, 2021):
+        logger.info("Búsqueda de resultados para el año {}".format(year))
+        df_year = scraping_year(driver, wait, year)
+        df_year.to_pickle("movimento_pasajeros_{}.pkl".format(year))
+        df = pd.concat([df, df_year], axis=0)
+
     logger.info("Exportación del conjunto de datos.")
     df.to_csv("pasajeros_prueba.csv")
-    df.to_pickle("pasajeros_prueba_numeros.pkl")
 
     logger.info("Fin.")
     driver.quit()
