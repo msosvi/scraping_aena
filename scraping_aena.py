@@ -8,9 +8,6 @@ import pandas as pd
 import time
 import datetime
 
-COLUMNAS_NUMERICAS = ['total', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
-ENCABEZADO_COMPLETO = ['airline'] + COLUMNAS_NUMERICAS
-
 
 # noinspection PyArgumentList
 def get_logger():
@@ -69,7 +66,10 @@ def recuperar_datos_busqueda(fila_encabezado, filas_resultados):
 
         df.loc[len(df)] = valores
 
-    df = df.reindex(columns=ENCABEZADO_COMPLETO, fill_value='--')
+    # Añado las columnas que el resutado de la búsqueda puede no dar al no tener datos.
+    encabezado_completo = ['airline', 'total', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct',
+                           'nov', 'dic']
+    df = df.reindex(columns=encabezado_completo, fill_value='--')
     return df
 
 
@@ -241,7 +241,9 @@ def scraping_year(driver, wait, year):
 
                 logger.info("Fin de la recuperación de los datos de la búsqueda")
 
-                df_busqueda = aplicar_tipo_numerico(df_busqueda, COLUMNAS_NUMERICAS)
+                columnas_numericas = ['total', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct',
+                                      'nov', 'dic']
+                df_busqueda = aplicar_tipo_numerico(df_busqueda, columnas_numericas)
 
                 df = pd.concat([df, df_busqueda], axis=0)
                 logger.info("Número total de registros recuperados {}.".format(len(df)))
