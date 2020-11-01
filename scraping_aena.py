@@ -14,7 +14,7 @@ def get_logger():
     logging.basicConfig(level=logging.INFO,
                         format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',
                         datefmt='%d-%b-%y %H:%M:%S',
-                        handlers=[logging.FileHandler("scraping_aena.log"), logging.StreamHandler()]
+                        handlers=[logging.FileHandler("logs/scraping_aena.log"), logging.StreamHandler()]
                         )
     return logging.getLogger('scraping_aena')
 
@@ -163,6 +163,24 @@ def abrir_pagina_estadistica(driver, wait, tipo):
     logger.info("Fin de la carga de la página de estadísticas.")
 
 
+def pivot_longer(wide_df):
+
+    # Dicionario para convertir las abreviaturas de los meses a números
+    meses = {'ene': '01', 'feb': '02', 'mar': '03', 'abr': '04', 'may': '05', 'jun': '06', 'jul': '07',
+             'ago': '08', 'sep': '09', 'oct': '10', 'nov': '11', 'dic': '12'}
+
+    long_df = wide_df.rename(columns=meses).drop(columns=["total"]).melt(
+                        id_vars=['airline', 'movimiento', 'aeropuerto', 'year'],
+                        var_name='mes',
+                        value_name='num_pasajeros')
+
+    long_df.insert(loc=3, column='fecha', value=long_df.year.astype(str) + '-' + long_df.mes)
+    long_df = long_df.drop(columns=['year', 'mes'])
+    long_df = long_df.dropna()
+
+    return long_df
+
+
 def scraping_year(driver, wait, year):
 
     if year == datetime.datetime.now().year:
@@ -234,10 +252,11 @@ def scraping_year(driver, wait, year):
                 # TODO comprobacion_totales(df, fila_total)
 
                 # Añadimos columnas al dataframe para los parámetros usados en la consulta:
-                # el aeropuerto y el tipo de movimiento.
-                df_busqueda['movimiento'] = parametros_respuesta['Movimiento']
-                df_busqueda['aeropuerto'] = parametros_respuesta['Aeropuerto Base']
-                df_busqueda['year'] = year
+                # el aeropuerto, el tipo de movimiento y el año.
+
+                df_busqueda.insert(loc=1, column='year', value=year)
+                df_busqueda.insert(loc=1, column='aeropuerto', value=parametros_respuesta['Aeropuerto Base'])
+                df_busqueda.insert(loc=1, column='movimiento', value=parametros_respuesta['Movimiento'])
 
                 logger.info("Fin de la recuperación de los datos de la búsqueda")
 
@@ -259,15 +278,21 @@ def main():
     driver = webdriver.Firefox()
     wait = WebDriverWait(driver, timeout=30)
 
-    df = None
+    wide_df = None
+    long_df = None
     for year in range(2019, 2021):
         logger.info("Búsqueda de resultados para el año {}".format(year))
         df_year = scraping_year(driver, wait, year)
-        df_year.to_pickle("movimento_pasajeros_{}.pkl".format(year))
-        df = pd.concat([df, df_year], axis=0)
+        df_year.to_pickle("datos/movimento_pasajeros_ancha_{}.pkl".format(year))
+        wide_df = pd.concat([wide_df, df_year], axis=0)
+
+        long_df_year = pivot_longer(df_year)
+        long_df_year.to_pickle("datos/movimento_pasajeros_larga{}.pkl".format(year))
+        long_df = pd.concat([long_df, long_df_year], axis=0)
 
     logger.info("Exportación del conjunto de datos.")
-    df.to_csv("pasajeros_prueba.csv")
+    wide_df.to_csv("datos/movimientos_pasajeros_ancha.csv", index=False)
+    long_df.to_csv("datos/movimientos_pasajeros_larga.csv", index=False)
 
     logger.info("Fin.")
     driver.quit()
