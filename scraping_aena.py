@@ -3,6 +3,8 @@ from selenium import webdriver
 from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
+from bs4 import BeautifulSoup
+from bs4.element import ResultSet
 import numpy as np
 import pandas as pd
 import time
@@ -66,7 +68,7 @@ def comprobacion_totales(df, fila_encabezado, fila_totales):
                   .format(k, totales_respuesta[k], totales_df[k]))
 
 
-def recuperar_datos_busqueda(fila_encabezado, filas_resultados):
+def recuperar_datos_busqueda(fila_encabezado, filas_resultados: ResultSet):
     encabezado_busqueda = fila_encabezado.text.lower().split(" ")
     encabezado_busqueda.insert(0, "airline")
 
@@ -74,9 +76,9 @@ def recuperar_datos_busqueda(fila_encabezado, filas_resultados):
 
     for fila in filas_resultados[:-1]:
         valores = []
-        casillas = fila.find_elements_by_tag_name("td")
+        casillas = fila.find_all('td')
         for c in casillas:
-            valor = c.get_attribute('textContent')
+            valor = c.get_text()
             if valor != '':
                 valores.append(valor)
 
@@ -135,9 +137,13 @@ def get_fila_encabezado(driver):
 def get_filas_resultados(driver):
     """Recuperamos las filas de la tabla de resultados
     # Las filas de la tabla de respuesta tienen como id campo de agrupación,
-    # para nuestro caso todos los ids empiezan con 'NOMBRE COMPAÑIA:"""
+    # para nuestro caso todos los ids empiezan con 'NOMBRE COMPAÑIA:'
+    Usamos BeautifulSoup porque Selenium es muy lento al recorrer la tabla de resultados"""
 
-    return driver.find_elements_by_xpath("//tr[starts-with(@id,'NOMBRE COMPAÑIA:')]")
+    soup = BeautifulSoup(driver.page_source, 'html.parser')
+    filas_resultados = soup.find_all('tr', id=re.compile("^NOMBRE COMPAÑIA:"))
+
+    return filas_resultados
 
 
 def get_parametros_respuesta(driver):
@@ -222,8 +228,8 @@ def scraping_year(driver, wait, year):
 
     # TODO Quitar limitación de parametros para las pruebas
     # aeropuertos = aeropuertos[:2]
-    aeropuertos = ['LA PALMA', 'EL HIERRO']
-    movimientos = ['LLEGADA']
+    # aeropuertos = ['LA PALMA', 'EL HIERRO', 'GRAN CANARIA']
+    # movimientos = ['LLEGADA']
 
     df = None
     for aeropuerto in aeropuertos:
@@ -296,7 +302,7 @@ def main():
 
     wide_df = None
     long_df = None
-    for year in range(2019, 2021):
+    for year in range(2005, 2021):
         logger.info("Búsqueda de resultados para el año {}".format(year))
         df_year = scraping_year(driver, wait, year)
         df_year.to_pickle("datos/movimento_pasajeros_ancha_{}.pkl".format(year))
