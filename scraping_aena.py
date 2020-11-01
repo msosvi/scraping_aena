@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import time
 import datetime
+import re
 
 
 # noinspection PyArgumentList
@@ -48,6 +49,21 @@ def comprobacion_numero_registros_df(df, numero_resultados):
     if len(df) != numero_resultados:
         logger.warning("El número de resultados de la búsqueda ({}) no es igual al número de registro recuperados ({})".
                        format(numero_resultados, len(df)))
+
+
+def comprobacion_totales(df, fila_encabezado, fila_totales):
+    titulos_columnas = fila_encabezado.text.lower().split(" ")
+    # Usamo re.sub para quitar los puntos. Usar replace no funciona aquí ¿por qué?
+    # pasajeros_totales = fila_totales.text.replace(r'\.', '').split(" ")[1:]
+    pasajeros_totales = re.sub(r'\.', '', fila_totales.text).split(" ")[1:]
+
+    totales_respuesta = dict(zip(titulos_columnas, pasajeros_totales))
+    totales_df = df.sum()
+
+    for k in totales_respuesta:
+        if int(totales_respuesta[k]) != totales_df[k]:
+            print("Error en la comprobación de totales de {} (Total respuesta: {} - Total datos: {})"
+                  .format(k, totales_respuesta[k], totales_df[k]))
 
 
 def recuperar_datos_busqueda(fila_encabezado, filas_resultados):
@@ -236,7 +252,7 @@ def scraping_year(driver, wait, year):
             if numero_resultados > 0:
                 # Esperamos a que la carga de resultados termine para recuperar todas las filas.
                 # Usamos la fila de totales como indicador.
-                fila_total = wait.until(
+                fila_totales = wait.until(
                     EC.visibility_of_element_located((By.XPATH, "//tr[starts-with(@id,'NOMBRE COMPAÑIA:Total')]")))
 
                 fila_encabezado = get_fila_encabezado(driver)
@@ -249,7 +265,6 @@ def scraping_year(driver, wait, year):
 
                 logger.info("Inicio de la recuperación de los resultados de la búsqueda.")
                 df_busqueda = recuperar_datos_busqueda(fila_encabezado, filas_resultados)
-                # TODO comprobacion_totales(df, fila_total)
 
                 # Añadimos columnas al dataframe para los parámetros usados en la consulta:
                 # el aeropuerto, el tipo de movimiento y el año.
@@ -263,6 +278,7 @@ def scraping_year(driver, wait, year):
                 columnas_numericas = ['total', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct',
                                       'nov', 'dic']
                 df_busqueda = aplicar_tipo_numerico(df_busqueda, columnas_numericas)
+                comprobacion_totales(df_busqueda, fila_encabezado, fila_totales)
 
                 df = pd.concat([df, df_busqueda], axis=0)
                 logger.info("Número total de registros recuperados {}.".format(len(df)))
