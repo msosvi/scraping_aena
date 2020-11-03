@@ -1,14 +1,18 @@
 # PRÁCTICA 1 - Web Scraping'
 
-**Asignatura**: 'Tipología y ciclo de vida de los datos'
+**Asignatura**: Tipología y ciclo de vida de los datos
 
 **Autor**: Miguel Angel Sosvilla Luis
 
 ## Descripción
 
-Este repositorio contiene el código usado para la creación del conjunto de datos *Movimiento Aéreo de Pasajeros*. La creación de este conjunto de datos se desarrolla como parte de la asignatura *Tipología y ciclo de vida de los datos* del Máster Universitario de Ciencia de Datos de la UOC. Los datos recogen los movimientos de pasajeros en los aeropuertos de españoles y se obtienen de [la página web de estadísticas de tráfico aéreo de AENA](https://wwwssl.aena.es/csee/Satellite?pagename=Estadisticas/Home), empresa pública española que gestiona los aeropuertos de interés general en España.
+Este repositorio contiene el código usado para la creación del conjunto de datos *Movimiento Aéreo de Pasajeros*.
 
-Conjuntos de datos de muestra están publicados en Zenodo: 
+La creación de este conjunto de datos se desarrolla como parte de la asignatura *Tipología y ciclo de vida de los datos* del Máster Universitario de Ciencia de Datos de la UOC.
+
+Los datos recogen los movimientos de pasajeros en los aeropuertos de españoles y se obtienen de [la página web de estadísticas de tráfico aéreo de AENA](https://wwwssl.aena.es/csee/Satellite?pagename=Estadisticas/Home), empresa pública española que gestiona los aeropuertos de interés general en España.
+
+Una muestra de los conjuntos de datos están publicados Zenodo:
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.4242905.svg)](https://doi.org/10.5281/zenodo.4242905)
 
