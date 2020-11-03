@@ -69,6 +69,9 @@ def comprobacion_totales(df, fila_encabezado, fila_totales):
 
 
 def recuperar_datos_busqueda(fila_encabezado, filas_resultados: ResultSet):
+    """Recuperamos los valores de las casillas de la tabla de de resultados.
+    Usamos BeautifulSoup porque Selenium es muy lento al recorrer la tabla de resultados"""
+
     encabezado_busqueda = fila_encabezado.text.lower().split(" ")
     encabezado_busqueda.insert(0, "airline")
 
@@ -127,17 +130,14 @@ def get_select_year(driver):
 
 
 def get_fila_encabezado(driver):
-    """Recuperamos la fila de encabezado.
-    La necesitamos porque si un mes no tiene datos la tabla de resultado no incluye la columna.
-    Usamos la fila anterior que tiene el texto Pasajeros para localizarla."""
-
+    # Usamos la fila anterior que tiene el texto Pasajeros para localizar la fila de encabezados
     return driver.find_element_by_xpath("//tr/td[text()='Pasajeros']/../following-sibling::tr")
 
 
 def get_filas_resultados(driver):
-    """Recuperamos las filas de la tabla de resultados
-    # Las filas de la tabla de respuesta tienen como id campo de agrupación,
-    # para nuestro caso todos los ids empiezan con 'NOMBRE COMPAÑIA:'
+    """Recuperamos las filas de la tabla de resultados.
+    Las filas de la tabla de respuesta tienen como id campo de agrupación,
+    para nuestro caso todos los ids empiezan con 'NOMBRE COMPAÑIA:'
     Usamos BeautifulSoup porque Selenium es muy lento al recorrer la tabla de resultados"""
 
     soup = BeautifulSoup(driver.page_source, 'html.parser')
@@ -164,6 +164,8 @@ def get_parametros_respuesta(driver):
 
 
 def abrir_pagina_estadistica(driver, wait, tipo):
+    """Abre la página para 'Tráfico del año en curso' o 'Tráfico por año' para los años anteriores.
+    Si el parámetro tipo tiene 'AÑO_ACTUAL' página del año en curso en otro caso la pagina de tráfico por año."""
 
     driver.get("https://wwwssl.aena.es/csee/Satellite?pagename=Estadisticas/Home")
     logger.info("Página incial de Estadísticas de tráfico aéreo de AENA cargada.")
@@ -186,6 +188,8 @@ def abrir_pagina_estadistica(driver, wait, tipo):
 
 
 def pivot_longer(wide_df):
+    """Convierte a formato de tabla larga el conjunto de datos
+    con formato de tabla larga (con columnas por meses)"""
 
     # Dicionario para convertir las abreviaturas de los meses a números
     meses = {'ene': '01', 'feb': '02', 'mar': '03', 'abr': '04', 'may': '05', 'jun': '06', 'jul': '07',
@@ -204,6 +208,8 @@ def pivot_longer(wide_df):
 
 
 def scraping_year(driver, wait, year):
+    """Consulta y recuperación de los datos de movimientos de pasajeros de llegada y salida de todos los areopuertos
+    para el año dado."""
 
     if year == datetime.datetime.now().year:
         abrir_pagina_estadistica(driver, wait, 'AÑO_ACTUAL')
@@ -225,11 +231,6 @@ def scraping_year(driver, wait, year):
 
     aeropuertos = get_text_options(select_aeropuerto)
     movimientos = get_text_options(select_movimiento)
-
-    # TODO Quitar limitación de parametros para las pruebas
-    # aeropuertos = aeropuertos[:2]
-    # aeropuertos = ['LA PALMA', 'EL HIERRO', 'GRAN CANARIA']
-    # movimientos = ['LLEGADA']
 
     df = None
     for aeropuerto in aeropuertos:
@@ -261,6 +262,8 @@ def scraping_year(driver, wait, year):
                 fila_totales = wait.until(
                     EC.visibility_of_element_located((By.XPATH, "//tr[starts-with(@id,'NOMBRE COMPAÑIA:Total')]")))
 
+                # Recuperamos la file de encabezado. La necesitamos por que en la respuesta pueden no estar todos
+                # los meses si no hay datos.
                 fila_encabezado = get_fila_encabezado(driver)
 
                 filas_resultados = get_filas_resultados(driver)
@@ -274,7 +277,6 @@ def scraping_year(driver, wait, year):
 
                 # Añadimos columnas al dataframe para los parámetros usados en la consulta:
                 # el aeropuerto, el tipo de movimiento y el año.
-
                 df_busqueda.insert(loc=1, column='year', value=year)
                 df_busqueda.insert(loc=1, column='aeropuerto', value=parametros_respuesta['Aeropuerto Base'])
                 df_busqueda.insert(loc=1, column='movimiento', value=parametros_respuesta['Movimiento'])
@@ -298,7 +300,7 @@ def scraping_year(driver, wait, year):
 
 def main():
     driver = webdriver.Firefox()
-    wait = WebDriverWait(driver, timeout=30)
+    wait = WebDriverWait(driver, timeout=300)
 
     wide_df = None
     long_df = None
@@ -309,12 +311,12 @@ def main():
         wide_df = pd.concat([wide_df, df_year], axis=0)
 
         long_df_year = pivot_longer(df_year)
-        long_df_year.to_pickle("datos/movimento_pasajeros_larga{}.pkl".format(year))
+        long_df_year.to_pickle("datos/movimento_pasajeros_larga_{}.pkl".format(year))
         long_df = pd.concat([long_df, long_df_year], axis=0)
 
     logger.info("Exportación del conjunto de datos.")
-    wide_df.to_csv("datos/movimientos_pasajeros_ancha.csv", index=False)
-    long_df.to_csv("datos/movimientos_pasajeros_larga.csv", index=False)
+    wide_df.to_csv("datos/movimiento_pasajeros_ancha.csv", index=False)
+    long_df.to_csv("datos/movimiento_pasajeros_larga.csv", index=False)
 
     logger.info("Fin.")
     driver.quit()
