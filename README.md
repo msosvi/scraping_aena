@@ -1,4 +1,4 @@
-# PRÁCTICA 1 - Web Scraping'
+# PRÁCTICA 1 - Web Scraping
 
 **Asignatura**: Tipología y ciclo de vida de los datos
 
