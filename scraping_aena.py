@@ -10,6 +10,7 @@ import pandas as pd
 import time
 import datetime
 import re
+import os
 
 
 # noinspection PyArgumentList
@@ -301,6 +302,9 @@ def scraping_year(driver, wait, year):
 def main():
     driver = webdriver.Firefox()
     wait = WebDriverWait(driver, timeout=300)
+
+    if not os.path.exists('datos'):
+        os.makedirs('datos')
 
     wide_df = None
     long_df = None
